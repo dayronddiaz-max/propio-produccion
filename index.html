@@ -2532,27 +2532,68 @@ function dibujarHerramientas() {
 }
 async function movHerr(h, cambio, mov) {
   const at = ahoraISO();
-  const ok = await guardarDoc('herramientas/' + h._id, { nombre: h.nombre, codigo: h.codigo || null, alta: h.alta || at, ...cambio, at, por: yo });
+  const ok = await guardarDoc('herramientas/' + h._id, { nombre: h.nombre, codigo: h.codigo || null, ...(h.cat ? { cat: h.cat } : {}), alta: h.alta || at, ...cambio, at, por: yo });
   if (!ok) return false;
   await guardarDoc('herramientas_mov/' + idHerr(), { herr: h._id, nombre: h.nombre, por: yo, at, dia: AAMMDD, ...mov });
   return true;
 }
+const HERR_CATALOGO = [
+  ['1', 'Amoladora 125 mm / 900 W'], ['2', 'Amoladora 230 mm / 2200 W'], ['3', 'Azada: cabeza metal 25 cm punto medio / mango madera 145 cm'],
+  ['4', 'Cinta métrica 100 m'], ['5', 'Barreta pata de cabra 92 cm'], ['6', 'Barreta pata de cabra 62 cm'],
+  ['8', 'Cinta métrica 5 m x 25 mm'], ['9', 'Cinta métrica 8 m x 26"'], ['10', 'Corta hierro hexagonal: mango 200 x diám. 18 mm'],
+  ['11', 'Destornillador cruz diám. 6 mm x punta 150 mm'], ['12', 'Destornillador plano diám. 6 mm x punta 150 mm'],
+  ['13', 'Engrasador manual 4 kg, manguera 1,30 m, presión 5.000 PSI'], ['14', 'Escoba: mango madera / cerdas duras PVC / cabeza recta 38 cm'],
+  ['15', 'Escoba: mango madera / cerdas duras PVC / cabeza recta 60 cm'], ['16', 'Escurridor: mango madera / cabeza 53 cm'],
+  ['17', 'Espátula de metal: boca 8 cm'], ['18', 'Inflador de ruedas para carretillas: 11 bar / 160 PSI'],
+  ['19', 'Llave combinada N° 10'], ['20', 'Llave combinada N° 11'], ['21', 'Llave combinada N° 14'], ['22', 'Llave combinada N° 17'], ['23', 'Llave combinada N° 19'],
+  ['24', 'Llave inglesa 24" 600 mm'], ['25', 'Llave saca disco p/ amoladora 125 mm / 900 W'], ['26', 'Llave saca disco p/ amoladora 230 mm / 1200 W'],
+  ['27', 'Martillo de uña: mango madera / cabeza chica / mango 26 cm'], ['28', 'Martillo de uña: mango madera / cabeza grande / mango 43 cm'],
+  ['29', 'Mazo de acero hexagonal 1 kg / mango PVC'], ['30', 'Mazo de goma redondo 450 g / mango PVC'], ['31', 'Mazo de hierro hexagonal 5 kg'],
+  ['32', 'Nivel magnético 1000 mm, precisión 0,5 mm/m'], ['33', 'Nivel magnético 400 mm, precisión 0,5 mm/m'], ['34', 'Mochila pulverizadora manual 20 l'],
+  ['35', 'Pala: mango madera / cabeza metal (ancho 17-14 cm, prof. 38 cm)'], ['36', 'Pala: mango madera / cabeza metal (ancho 23 cm, prof. 28 cm)'],
+  ['37', 'Pinza universal'], ['38', 'Pistola de sellar 375 mm / 15"'], ['39', 'Remachador manual tipo acordeón'], ['40', 'Remachador manual tipo palanca'],
+  ['41', 'Remachador manual tipo pinza'], ['42', 'Sierrita manual sin hoja'], ['43', 'Soldador MIG-200ES 3 en 1 (MIG/MAG/MMA) 200 A'],
+  ['44', 'Soldador MIG-250S 3 en 1 (MIG/MAG/MMA) 250 A'], ['45', 'Soplador eléctrico 600 W - 3,5 m³/min'], ['46', 'Soplador naftero 25,4 cc 1 HP 12 m³/min'],
+  ['47', 'Taladro 800 W 24 mm (15/16")'], ['48', 'Tenaza'], ['49', 'Termofusora 1500 W'], ['50', 'Tijera corta chapa'],
+  ['51', 'Vibrador de concreto 2200 W, 2000 vib./min, manguera 3,5 m x 35 mm'], ['52', 'Hidrolavadora de alta presión 2500 W 2300 PSI'],
+];
 function abrirHerrLote() {
   const fila = () => `<div class="hl-fila" style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 4.5em;gap:6px;align-items:end;border-top:1px solid var(--linea, #ddd);padding-top:6px">
     <label class="campo" style="margin:0">Herramienta<input class="hl-nom" autocomplete="off" placeholder="Ej.: Amoladora grande"></label>
     <label class="campo" style="margin:0">Código<input class="hl-cod" autocomplete="off" placeholder="opcional"></label>
     <label class="campo" style="margin:0">Cant.<input class="hl-q" type="number" min="1" max="30" value="1"></label>
     <label class="op" style="grid-column:1/-1"><input type="checkbox" class="hl-rep"> Está en reparación</label></div>`;
+  const yaCat = c => HERR.filter(h => h.estado !== 'baja' && h.cat === c).length;
+  const filaCat = ([c, n]) => `<div class="hl-cat" data-cat="${c}" data-nom="${esc((c + ' ' + n).toLowerCase())}" style="display:grid;grid-template-columns:minmax(0,1fr) 4.2em 4.2em;gap:6px;align-items:center;border-top:1px solid var(--linea, #ddd);padding-top:4px">
+    <span><b>${c}</b> · ${esc(n)}${yaCat(c) ? ` <small class="etq ok">ya hay ${yaCat(c)}</small>` : ''}</span>
+    <input class="hl-cb" type="number" min="0" max="30" inputmode="numeric" aria-label="${esc(n)}: en buen estado" placeholder="0">
+    <input class="hl-cr" type="number" min="0" max="30" inputmode="numeric" aria-label="${esc(n)}: en reparación" placeholder="0"></div>`;
   $('#hoja-pieza-c').innerHTML = `<h3>Cargar inventario de herramientas</h3>
-    <p class="ayuda" style="margin:0">Una fila por herramienta. Si hay varias iguales, poné la cantidad: se numeran solas (Amoladora 1, Amoladora 2…). Las filas vacías no se guardan.</p>
-    <div id="hl-filas" style="display:grid;gap:6px">${fila()}${fila()}${fila()}${fila()}${fila()}</div>
+    <p class="ayuda" style="margin:0">Poné cuántas hay de cada una. Si hay varias iguales, se numeran solas (código 1-1, 1-2…). Dejá vacío lo que no hay.</p>
+    <label class="campo">Buscar<input id="hl-buscar" type="search" autocomplete="off" placeholder="Nombre o código"></label>
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 4.2em 4.2em;gap:6px"><small class="ayuda">Herramienta</small><small class="ayuda">Bien</small><small class="ayuda">En repar.</small></div>
+    <div id="hl-catalogo" style="display:grid;gap:4px">${HERR_CATALOGO.map(filaCat).join('')}</div>
+    <h4 style="margin:12px 0 0">Otras que no están en la lista</h4>
+    <div id="hl-filas" style="display:grid;gap:6px">${fila()}${fila()}</div>
     <div><button class="btn" type="button" id="hl-mas">+ Más filas</button></div>
     <div class="acciones"><button class="btn" type="button" id="hl-cerrar">Cancelar</button><button class="btn prim" type="button" id="hl-ok">Guardar herramientas</button></div>`;
   const dlg = $('#hoja-pieza'); if (!dlg.open) dlg.showModal();
   $('#hl-cerrar').onclick = () => dlg.close();
   $('#hl-mas').onclick = () => $('#hl-filas').insertAdjacentHTML('beforeend', fila() + fila() + fila());
+  $('#hl-buscar').oninput = e => { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('.hl-cat').forEach(x => { x.hidden = !!q && !x.dataset.nom.includes(q); }); };
   $('#hl-ok').onclick = async () => {
     const items = [];
+    for (const f of document.querySelectorAll('.hl-cat')) {
+      const c = f.dataset.cat, nombre = HERR_CATALOGO.find(x => x[0] === c)[1];
+      for (const [cls, rep] of [['.hl-cb', false], ['.hl-cr', true]]) {
+        const v = f.querySelector(cls).value.trim(); if (!v) continue;
+        const n = parseInt(v, 10); if (!(n >= 0 && n <= 30)) { f.querySelector(cls).focus(); return toast(c + ' · ' + nombre + ': la cantidad va de 0 a 30'); }
+        if (n) items.push({ nombre, codigo: c, cat: c, n, rep });
+      }
+    }
+    // Numeración por código: si hay buenas y en reparación del mismo código, siguen la misma serie
+    const porCat = {}; for (const it of items) if (it.cat) porCat[it.cat] = (porCat[it.cat] || 0) + it.n;
+    const desde = {}; for (const it of items) if (it.cat) { desde[it.cat] = desde[it.cat] || yaCat(it.cat); it.ini = desde[it.cat]; it.serie = porCat[it.cat] + yaCat(it.cat) > 1; desde[it.cat] += it.n; }
     for (const f of document.querySelectorAll('.hl-fila')) {
       const nombre = f.querySelector('.hl-nom').value.trim(), codigo = f.querySelector('.hl-cod').value.trim();
       if (!nombre) { if (codigo) { f.querySelector('.hl-nom').focus(); return toast('Falta el nombre de la herramienta ' + codigo); } continue; }
@@ -2561,13 +2602,15 @@ function abrirHerrLote() {
       items.push({ nombre, codigo, n, rep: f.querySelector('.hl-rep').checked });
     }
     if (!items.length) return toast('Escribí al menos una herramienta');
-    const ya = items.filter(it => HERR.some(h => h.estado !== 'baja' && String(h.nombre).toLowerCase().startsWith(it.nombre.toLowerCase())));
+    const ya = items.filter(it => it.cat ? yaCat(it.cat) : HERR.some(h => h.estado !== 'baja' && String(h.nombre).toLowerCase().startsWith(it.nombre.toLowerCase())));
     const g = $('#hl-ok');
     if (ya.length && !g.dataset.confirma) { g.dataset.confirma = '1'; g.textContent = 'Guardar igual'; return toast('Ya hay cargadas: ' + ya.map(x => x.nombre).join(', ') + '. Si son otras, tocá "Guardar igual"'); }
     g.disabled = true; g.textContent = 'Guardando…';
     let tot = 0;
     for (const it of items) for (let k = 1; k <= it.n; k++) {
-      const h = { _id: idHerr(), nombre: it.n > 1 ? it.nombre + ' ' + k : it.nombre, codigo: it.codigo ? (it.n > 1 ? it.codigo + '-' + k : it.codigo) : null };
+      const h = it.cat
+        ? { _id: idHerr(), cat: it.cat, nombre: it.serie ? it.nombre + ' (' + (it.ini + k) + ')' : it.nombre, codigo: it.serie ? it.cat + '-' + (it.ini + k) : it.cat }
+        : { _id: idHerr(), nombre: it.n > 1 ? it.nombre + ' ' + k : it.nombre, codigo: it.codigo ? (it.n > 1 ? it.codigo + '-' + k : it.codigo) : null };
       if (!(await movHerr(h, { estado: it.rep ? 'reparacion' : 'disponible', tiene: null, desde: null }, { tipo: 'alta', nota: 'Inventario inicial' + (it.rep ? ' · en reparación' : '') }))) { g.disabled = false; g.textContent = 'Guardar herramientas'; return toast('Se guardaron ' + tot + '. Revisá la conexión y volvé a intentar con las que faltan'); }
       tot++;
     }
