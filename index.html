@@ -57,6 +57,9 @@ header.barra{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;backgrou
 .rol{flex:1;min-width:200px;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
 .rol select{flex:1;min-width:0;font:500 15px var(--f-body);padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);min-height:40px}
 
+.cc-fila{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0}
+.cc-fila .btn{min-height:0;padding:4px 12px}
+.cc-res{margin:8px 0 0}
 .clima{margin-top:12px;display:grid;gap:10px}
 .clima .cl-fila{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px 14px;align-items:end}
 .clima .cl-cab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
@@ -2984,7 +2987,67 @@ function despacharOrden(o) {
 }
 
 // ---------- Materiales: ingreso con foto de remisión o factura, consumo por mezcla y por pieza, stock (lo ve el gerente) ----------
-let MAT_MOV = [], CFG_MAT = {};
+let MAT_MOV = [], CFG_MAT = {}, CONT_CEM = {};
+// Conteo manual de cemento al inicio y al cierre de la jornada (pedido del gerente 23/11/2026). Un documento por día: conteo_cemento/AAMMDD { dia, inicio, fin }.
+const BOLSA_KG = 50;
+const bolsasDe = kg => Math.round(kg / BOLSA_KG * 10) / 10;
+const puedeContarCem = () => puedeEscribir && algun(['deposito', 'gerente', 'unico', 'logistica']);
+function resumenCemDia(dia) {
+  let con = 0, ing = 0;
+  for (const mv of MAT_MOV) {
+    if (mv.anulado || mv.dia !== dia || mv.tipo === 'ajuste') continue;
+    const ef = efectoMov(mv, 'general'); if (!ef) continue;
+    for (const l of mv.lineas || []) if (l.mat === 'cemento') { if (ef > 0) ing += l.cantidad; else con += l.cantidad; }
+  }
+  const c = CONT_CEM[dia] || {}, ini = c.inicio || null, fin = c.fin || null;
+  const real = ini && fin ? ini.kg + ing - fin.kg : null;
+  return { con, ing, ini, fin, real, dif: real == null ? null : real - con };
+}
+const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '') + fmtN(Math.abs(v));
+function htmlConteoCem() {
+  if (matDep !== 'general' || !(soyDueno || algun(['deposito', 'gerente', 'unico', 'logistica']))) return '';
+  const pc = puedeContarCem(), r = resumenCemDia(AAMMDD);
+  const fila = (t, tit, x) => `<div class="cc-fila"><span><b>${tit}</b>: ${x ? `<b>${fmtN(bolsasDe(x.kg))} bolsas</b> <small class="ayuda">(${fmtN(x.kg)} kg) · ${esc(hora(x.at))} · ${esc(quien(x.por))}${x.nota ? ' · ' + esc(x.nota) : ''}</small>` : '<span class="ayuda">sin cargar</span>'}</span>
+    ${pc ? `<button class="btn ${x ? '' : 'prim'}" type="button" data-cem="${t}">${x ? 'Corregir' : 'Cargar'}</button>` : ''}</div>`;
+  const resumen = r.real != null
+    ? `<p class="cc-res"><b>Consumo real de hoy:</b> ${fmtN(bolsasDe(r.real))} bolsas · <b>descontado por recetas:</b> ${fmtN(bolsasDe(r.con))} bolsas · <b>diferencia:</b> <span class="${Math.abs(r.dif) > 2 * BOLSA_KG ? 'obs' : ''}">${sgn(bolsasDe(r.dif))} bolsas</span>${r.ing ? ` <small class="ayuda">(entraron ${fmtN(bolsasDe(r.ing))} bolsas)</small>` : ''}</p>`
+    : (r.ini ? '<p class="ayuda" style="margin:6px 0 0">Falta el conteo de cierre para calcular el consumo real del día.</p>' : '<p class="ayuda" style="margin:6px 0 0">Contá las bolsas al empezar y al terminar la jornada: así se ve cuánto cemento se usó de verdad frente a lo que descuentan las recetas.</p>');
+  const dias = Object.keys(CONT_CEM).sort().reverse().slice(0, 7);
+  const tabla = dias.length ? `<details style="margin-top:8px"><summary class="ayuda">Últimos días</summary><div class="tabla-wrap" style="overflow-x:auto"><table class="res"><thead><tr><th>Día</th><th>Inicio</th><th>Cierre</th><th>Real</th><th>Recetas</th><th>Dif.</th></tr></thead><tbody>${dias.map(d => { const x = resumenCemDia(d); return `<tr><td>${esc(fechaTxt(d))}</td><td>${x.ini ? fmtN(bolsasDe(x.ini.kg)) : '—'}</td><td>${x.fin ? fmtN(bolsasDe(x.fin.kg)) : '—'}</td><td>${x.real != null ? fmtN(bolsasDe(x.real)) : '—'}</td><td>${fmtN(bolsasDe(x.con))}</td><td>${x.dif != null ? sgn(bolsasDe(x.dif)) : '—'}</td></tr>`; }).join('')}</tbody></table></div><p class="ayuda" style="margin:4px 0 0">Cantidades en bolsas de 50 kg. Dif. = real − recetas: si es positiva, se usó más cemento del que descuentan las recetas.</p></details>` : '';
+  return `<div class="caja" style="margin-bottom:10px"><h4 style="margin:0 0 6px">Cemento · conteo del día</h4>${fila('inicio', 'Inicio de la jornada', r.ini)}${fila('fin', 'Cierre de la jornada', r.fin)}${resumen}${tabla}</div>`;
+}
+function abrirConteoCem(tipo) {
+  const tit = tipo === 'inicio' ? 'inicio de la jornada' : 'cierre de la jornada';
+  const prev = (CONT_CEM[AAMMDD] || {})[tipo], hay = stockMat('general').cemento.hay;
+  $('#hoja-pieza-c').innerHTML = `<h3>Conteo de cemento · ${tit}</h3>
+    <p class="ayuda" style="margin:0">Contá las bolsas que hay ahora en el depósito general. El sistema tiene <b>${fmtN(bolsasDe(hay))} bolsas</b> (${fmtN(hay)} kg). Si hay una bolsa abierta, poné la fracción (0,5 = media bolsa).</p>
+    ${prev ? `<p class="aviso" style="margin:0">Ya hay un conteo de ${tit}: ${fmtN(bolsasDe(prev.kg))} bolsas. Si guardás, se reemplaza.</p>` : ''}
+    <label class="campo">Bolsas de 50 kg<input id="cc-q" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 228"></label>
+    <p class="ayuda" id="cc-dif" style="margin:0"></p>
+    <label class="campo">Nota (opcional)<input id="cc-nota" autocomplete="off" placeholder="Ej.: contó Osvaldo"></label>
+    <label class="op"><input type="checkbox" id="cc-ajuste" checked> Ajustar el stock del sistema a lo contado</label>
+    <div class="acciones"><button class="btn" type="button" id="lg-cancelar">Cancelar</button><button class="btn prim" type="button" id="lg-ok">Guardar conteo</button></div>`;
+  const dlg = $('#hoja-pieza'); dlg.showModal();
+  $('#lg-cancelar').onclick = () => dlg.close();
+  $('#cc-q').oninput = () => { const q = leerNum($('#cc-q').value); $('#cc-dif').textContent = $('#cc-q').value.trim() && isFinite(q) ? 'Diferencia con el sistema: ' + sgn(bolsasDe(q * BOLSA_KG - hay)) + ' bolsas' : ''; };
+  $('#lg-ok').onclick = async () => {
+    const txt = $('#cc-q').value.trim(), q = leerNum(txt);
+    if (!txt || !isFinite(q) || q < 0) { $('#cc-q').focus(); return toast('Poné cuántas bolsas contaste'); }
+    const kg = Math.round(q * BOLSA_KG), nota = $('#cc-nota').value.trim() || null, at = ahoraISO(), d = Math.round((kg - hay) * 1000) / 1000;
+    const g = $('#lg-ok'); g.disabled = true; g.textContent = 'Guardando…';
+    const reg = { bolsas: q, kg, sistema: hay, at, por: yo, nota, ajustado: false };
+    if ($('#cc-ajuste').checked && d) {
+      const ok = await guardarDoc('materiales_mov/A-' + AAMMDD + '-' + Date.now().toString(36), { tipo: 'ajuste', dep: 'general', dia: AAMMDD, at, por: yo, lineas: [{ mat: 'cemento', cantidad: d, contado: kg, sistema: hay, detalle: fmtN(q) + ' bolsas de 50 kg (conteo de ' + tit + ')' }], nota: 'Conteo de cemento al ' + tit + (nota ? ' · ' + nota : '') });
+      if (!ok) { g.disabled = false; g.textContent = 'Guardar conteo'; return; }
+      reg.ajustado = true; reg.ajuste = d;
+    }
+    if (!(await guardarDoc('conteo_cemento/' + AAMMDD, { ...(CONT_CEM[AAMMDD] || {}), dia: AAMMDD, [tipo]: reg }))) { g.disabled = false; g.textContent = 'Guardar conteo'; return; }
+    dlg.close(); toast('Conteo de ' + tit + ' guardado');
+    registrarLog('Conteo de cemento · ' + tit + ' · ' + fmtN(q) + ' bolsas' + (d ? ' · diferencia ' + sgn(bolsasDe(d)) + ' bolsas' + (reg.ajustado ? ' (stock ajustado)' : '') : ''));
+    dibujar();
+  };
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-cem]'); if (b && !b.disabled) abrirConteoCem(b.dataset.cem); });
 const MATERIALES_BASE = [
   { id: 'cemento', nombre: 'Cemento', unidad: 'kg' }, { id: 'arena', nombre: 'Arena', unidad: 'kg' },
   { id: 'piedra', nombre: 'Piedra triturada', unidad: 'kg' }, { id: 'aditivo', nombre: 'Aditivo', unidad: 'l' },
@@ -3114,7 +3177,7 @@ function dibujarMateriales() {
       <div class="tabla-wrap" style="overflow-x:auto"><table class="res"><thead><tr><th>Proveedor</th><th>Material</th><th>Ingresó</th><th>Usado</th><th>En stock</th><th>Entregas</th><th>Con observación</th></tr></thead><tbody>${filas.join('')}</tbody></table></div>`;
   }
   const movs = [...MAT_MOV].filter(mv => tocaDep(mv, matDep) && (verStock ? true : mv.dia === AAMMDD && mv.tipo !== 'consumo')).sort((a, b) => a.at < b.at ? 1 : -1).slice(0, verStock ? 20 : 10);
-  box.innerHTML = bot + cuerpo + `<h4 style="margin:12px 0 4px">Últimos movimientos</h4>` + (movs.length ? movs.map(mv => `<div class="caja remito" style="margin-top:6px">${textoMov(mv, fifo.usoMov[mv._id])}
+  box.innerHTML = bot + htmlConteoCem() + cuerpo + `<h4 style="margin:12px 0 4px">Últimos movimientos</h4>` + (movs.length ? movs.map(mv => `<div class="caja remito" style="margin-top:6px">${textoMov(mv, fifo.usoMov[mv._id])}
       ${!mv.anulado && mv.tipo === 'ingreso' && puedeEscribir ? `<br><button class="btn" type="button" data-mat="calidad" data-mid="${esc(mv._id)}" style="margin-top:4px">Calidad del material</button>` : ''}
       ${!mv.anulado && mv.tipo !== 'consumo' && (soyDueno || mv.por === yo) ? `<button class="btn" type="button" data-mat="anular" data-mid="${esc(mv._id)}" style="margin-top:4px">Anular</button>` : ''}</div>`).join('') : '<p class="ayuda" style="margin:0">Sin movimientos todavía.</p>');
 }
@@ -4489,6 +4552,7 @@ function suscribir() {
   db.collection('herramientas').onSnapshot(s => { HERR = s.docs.map(d => ({ ...d.data(), _id: d.id })); if (modo === 'mat') dibujarHerramientas(); }, fallo);
   db.collection('herramientas_mov').orderBy('at', 'desc').limit(40).onSnapshot(s => { HERR_MOV = s.docs.map(d => ({ ...d.data(), _id: d.id })); if (modo === 'mat') dibujarHerramientas(); }, fallo);
   db.collection('materiales_mov').onSnapshot(s => { MAT_MOV = s.docs.map(d => ({ ...d.data(), _id: d.id })); llego(s); dibujarLogistica(); }, fallo);
+  db.collection('conteo_cemento').onSnapshot(s => { CONT_CEM = mapa(s); if (modo === 'mat') dibujarMateriales(); }, fallo);
   db.doc('config/materiales').onSnapshot(d => { CFG_MAT = d.exists ? (d.data() || {}) : {}; dibujarLogistica(); }, fallo);
   db.collection('ordenes').where('abierta', '==', true).onSnapshot(s => { ORDENES = s.docs.map(d => ({ ...d.data(), _id: d.id })); llego(s); dibujarLogistica(); }, fallo);
 }
