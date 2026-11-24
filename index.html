@@ -2521,6 +2521,11 @@ document.addEventListener('click', e => { if (e.target.closest('#btn-roles')) ab
 let HERR = [], HERR_MOV = [];
 const puedeHerr = () => puedeEscribir && algun(['deposito', 'gerente', 'unico']);
 const HERR_EST = { disponible: 'Disponible', prestada: 'Prestada', reparacion: 'En reparación', baja: 'De baja' };
+// Condición de cada herramienta (pedido del gerente 24/11/2026): Bueno, A reparar o Roto. Es independiente de si está prestada o disponible.
+const HERR_COND = { bueno: 'Bueno', areparar: 'A reparar', roto: 'Roto' };
+const HERR_COND_F = { bueno: 'buena', areparar: 'a reparar', roto: 'rota' };
+const condHerr = h => h.cond || (h.estado === 'reparacion' ? 'areparar' : 'bueno');
+const radiosCond = (nombre, sel, tit) => `<fieldset class="chk"><legend>${tit || 'Estado de la herramienta'}</legend><div class="fila2" style="flex-wrap:wrap">${Object.entries(HERR_COND).map(([k, v]) => `<label class="op"><input type="radio" name="${nombre}" value="${k}" ${k === sel ? 'checked' : ''}> ${v}</label>`).join('')}</div></fieldset>`;
 const herrAtrasada = h => h.estado === 'prestada' && !!h.desde && !esHoy(h.desde);
 const idHerr = () => 'H' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const fechaHora = iso => iso ? new Date(iso).toLocaleDateString('es-PY', { day: 'numeric', month: 'short' }) + ' ' + hora(iso) : '';
@@ -2529,24 +2534,26 @@ function dibujarHerramientas() {
   const pe = puedeHerr();
   const act = HERR.filter(h => h.estado !== 'baja').sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
   const prest = act.filter(h => h.estado === 'prestada').sort((a, b) => (a.desde < b.desde ? -1 : 1));
-  const rep = act.filter(h => h.estado === 'reparacion'), disp = act.filter(h => h.estado === 'disponible');
+  const libres = act.filter(h => h.estado !== 'prestada');
+  const rep = libres.filter(h => condHerr(h) === 'areparar'), rotas = libres.filter(h => condHerr(h) === 'roto'), disp = libres.filter(h => condHerr(h) === 'bueno');
   const atr = prest.filter(herrAtrasada);
   const fila = h => `<button type="button" class="btn" data-herr="${esc(h._id)}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;width:100%">
     <span><b>${esc(h.nombre)}</b>${h.codigo ? ` <small class="ayuda">${esc(h.codigo)}</small>` : ''}${h.estado === 'prestada' ? `<br><small>${esc(h.tiene || '')} · desde ${esc(fechaHora(h.desde))}</small>` : ''}</span>
-    <span class="etq ${herrAtrasada(h) || h.estado === 'reparacion' ? 'bad' : h.estado === 'disponible' ? 'ok' : ''}">${herrAtrasada(h) ? 'Sin devolver' : HERR_EST[h.estado]}</span></button>`;
-  const movTxt = m => ({ alta: 'Alta', prestamo: 'Prestada a ' + (m.a || ''), devolucion: 'Devuelta' + (m.estado === 'dano' ? ' con daño' : ''), reparada: 'Volvió de reparación', baja: 'Dada de baja' }[m.tipo] || m.tipo);
-  box.innerHTML = `<div class="kpis"><div class="kpi"><span>Herramientas</span><b>${act.length}</b></div><div class="kpi ok"><span>Disponibles</span><b>${disp.length}</b></div><div class="kpi lib"><span>Prestadas</span><b>${prest.length}</b></div><div class="kpi ${atr.length || rep.length ? 'bad' : ''}"><span>Sin devolver · en reparación</span><b>${atr.length} · ${rep.length}</b></div></div>`
+    <span class="etq ${herrAtrasada(h) || condHerr(h) !== 'bueno' ? 'bad' : h.estado === 'disponible' ? 'ok' : ''}">${herrAtrasada(h) ? 'Sin devolver' : h.estado === 'prestada' ? 'Prestada' : HERR_COND[condHerr(h)]}</span></button>`;
+  const movTxt = m => ({ alta: 'Alta', prestamo: 'Prestada a ' + (m.a || ''), devolucion: 'Devuelta' + (m.cond && m.cond !== 'bueno' ? ' · ' + HERR_COND_F[m.cond] : m.estado === 'dano' ? ' con daño' : ''), estado: 'Estado: ' + (HERR_COND[m.cond] || m.cond || ''), reparada: 'Volvió de reparación', baja: 'Dada de baja' }[m.tipo] || m.tipo);
+  box.innerHTML = `<div class="kpis"><div class="kpi"><span>Herramientas</span><b>${act.length}</b></div><div class="kpi ok"><span>Disponibles</span><b>${disp.length}</b></div><div class="kpi lib"><span>Prestadas</span><b>${prest.length}</b></div><div class="kpi ${atr.length || rep.length || rotas.length ? 'bad' : ''}"><span>Sin devolver · a reparar · rotas</span><b>${atr.length} · ${rep.length} · ${rotas.length}</b></div></div>`
     + (atr.length ? `<p class="aviso" style="margin-top:10px">⚠ <b>${atr.length} sin devolver de días anteriores:</b> ${atr.map(h => esc(h.nombre + ' (' + (h.tiene || '?') + ')')).join(', ')}.</p>` : '')
     + (pe ? '<div class="previo-botones" style="margin:10px 0"><button class="btn prim" type="button" id="herr-lote">📋 Cargar inventario de herramientas</button><button class="btn" type="button" id="herr-nueva">+ Nueva herramienta</button></div>' : '')
     + (!act.length ? '<p class="ayuda" style="margin:10px 0 0">Todavía no hay herramientas cargadas.' + (pe ? ' Empezá con "+ Nueva herramienta".' : '') + '</p>' : '')
     + (prest.length ? `<h3 class="sub">Prestadas</h3><div class="lista">${prest.map(fila).join('')}</div>` : '')
-    + (rep.length ? `<h3 class="sub">En reparación</h3><div class="lista">${rep.map(fila).join('')}</div>` : '')
+    + (rep.length ? `<h3 class="sub">A reparar</h3><div class="lista">${rep.map(fila).join('')}</div>` : '')
+    + (rotas.length ? `<h3 class="sub">Rotas</h3><div class="lista">${rotas.map(fila).join('')}</div>` : '')
     + (disp.length ? `<h3 class="sub">Disponibles</h3><div class="lista">${disp.map(fila).join('')}</div>` : '')
     + (HERR_MOV.length ? `<details style="margin-top:12px"><summary class="ayuda">Últimos movimientos</summary><ul class="actividad" style="margin-top:6px">${HERR_MOV.slice(0, 20).map(m => `<li><span class="h">${esc(fechaHora(m.at))}</span> ${esc(m.nombre || '')} · ${esc(movTxt(m))}${m.nota ? ' · ' + esc(m.nota) : ''} <small class="ayuda">(${esc(quien(m.por))})</small></li>`).join('')}</ul></details>` : '');
 }
 async function movHerr(h, cambio, mov) {
   const at = ahoraISO();
-  const ok = await guardarDoc('herramientas/' + h._id, { nombre: h.nombre, codigo: h.codigo || null, ...(h.cat ? { cat: h.cat } : {}), alta: h.alta || at, ...cambio, at, por: yo });
+  const ok = await guardarDoc('herramientas/' + h._id, { nombre: h.nombre, codigo: h.codigo || null, ...(h.cat ? { cat: h.cat } : {}), cond: condHerr(h), alta: h.alta || at, ...cambio, at, por: yo });
   if (!ok) return false;
   await guardarDoc('herramientas_mov/' + idHerr(), { herr: h._id, nombre: h.nombre, por: yo, at, dia: AAMMDD, ...mov });
   return true;
@@ -2576,16 +2583,17 @@ function abrirHerrLote() {
     <label class="campo" style="margin:0">Herramienta<input class="hl-nom" autocomplete="off" placeholder="Ej.: Amoladora grande"></label>
     <label class="campo" style="margin:0">Código<input class="hl-cod" autocomplete="off" placeholder="opcional"></label>
     <label class="campo" style="margin:0">Cant.<input class="hl-q" type="number" min="1" max="30" value="1"></label>
-    <label class="op" style="grid-column:1/-1"><input type="checkbox" class="hl-rep"> Está en reparación</label></div>`;
+    <label class="campo" style="grid-column:1/-1;margin:0">Estado<select class="hl-cond"><option value="bueno">Bueno</option><option value="areparar">A reparar</option><option value="roto">Roto</option></select></label></div>`;
   const yaCat = c => HERR.filter(h => h.estado !== 'baja' && h.cat === c).length;
-  const filaCat = ([c, n]) => `<div class="hl-cat" data-cat="${c}" data-nom="${esc((c + ' ' + n).toLowerCase())}" style="display:grid;grid-template-columns:minmax(0,1fr) 4.2em 4.2em;gap:6px;align-items:center;border-top:1px solid var(--linea, #ddd);padding-top:4px">
+  const filaCat = ([c, n]) => `<div class="hl-cat" data-cat="${c}" data-nom="${esc((c + ' ' + n).toLowerCase())}" style="display:grid;grid-template-columns:minmax(0,1fr) 3.6em 3.6em 3.6em;gap:6px;align-items:center;border-top:1px solid var(--linea, #ddd);padding-top:4px">
     <span><b>${c}</b> · ${esc(n)}${yaCat(c) ? ` <small class="etq ok">ya hay ${yaCat(c)}</small>` : ''}</span>
     <input class="hl-cb" type="number" min="0" max="30" inputmode="numeric" aria-label="${esc(n)}: en buen estado" placeholder="0">
-    <input class="hl-cr" type="number" min="0" max="30" inputmode="numeric" aria-label="${esc(n)}: en reparación" placeholder="0"></div>`;
+    <input class="hl-cr" type="number" min="0" max="30" inputmode="numeric" aria-label="${esc(n)}: a reparar" placeholder="0">
+    <input class="hl-cx" type="number" min="0" max="30" inputmode="numeric" aria-label="${esc(n)}: rotas" placeholder="0"></div>`;
   $('#hoja-pieza-c').innerHTML = `<h3>Cargar inventario de herramientas</h3>
     <p class="ayuda" style="margin:0">Poné cuántas hay de cada una. Si hay varias iguales, se numeran solas (código 1-1, 1-2…). Dejá vacío lo que no hay.</p>
     <label class="campo">Buscar<input id="hl-buscar" type="search" autocomplete="off" placeholder="Nombre o código"></label>
-    <div style="display:grid;grid-template-columns:minmax(0,1fr) 4.2em 4.2em;gap:6px"><small class="ayuda">Herramienta</small><small class="ayuda">Bien</small><small class="ayuda">En repar.</small></div>
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 3.6em 3.6em 3.6em;gap:6px"><small class="ayuda">Herramienta</small><small class="ayuda">Bueno</small><small class="ayuda">A repar.</small><small class="ayuda">Roto</small></div>
     <div id="hl-catalogo" style="display:grid;gap:4px">${HERR_CATALOGO.map(filaCat).join('')}</div>
     <h4 style="margin:12px 0 0">Otras que no están en la lista</h4>
     <div id="hl-filas" style="display:grid;gap:6px">${fila()}${fila()}</div>
@@ -2599,10 +2607,10 @@ function abrirHerrLote() {
     const items = [];
     for (const f of document.querySelectorAll('.hl-cat')) {
       const c = f.dataset.cat, nombre = HERR_CATALOGO.find(x => x[0] === c)[1];
-      for (const [cls, rep] of [['.hl-cb', false], ['.hl-cr', true]]) {
+      for (const [cls, cond] of [['.hl-cb', 'bueno'], ['.hl-cr', 'areparar'], ['.hl-cx', 'roto']]) {
         const v = f.querySelector(cls).value.trim(); if (!v) continue;
         const n = parseInt(v, 10); if (!(n >= 0 && n <= 30)) { f.querySelector(cls).focus(); return toast(c + ' · ' + nombre + ': la cantidad va de 0 a 30'); }
-        if (n) items.push({ nombre, codigo: c, cat: c, n, rep });
+        if (n) items.push({ nombre, codigo: c, cat: c, n, cond });
       }
     }
     // Numeración por código: si hay buenas y en reparación del mismo código, siguen la misma serie
@@ -2613,7 +2621,7 @@ function abrirHerrLote() {
       if (!nombre) { if (codigo) { f.querySelector('.hl-nom').focus(); return toast('Falta el nombre de la herramienta ' + codigo); } continue; }
       const n = parseInt(f.querySelector('.hl-q').value, 10);
       if (!(n >= 1 && n <= 30)) { f.querySelector('.hl-q').focus(); return toast(nombre + ': la cantidad va de 1 a 30'); }
-      items.push({ nombre, codigo, n, rep: f.querySelector('.hl-rep').checked });
+      items.push({ nombre, codigo, n, cond: f.querySelector('.hl-cond').value });
     }
     if (!items.length) return toast('Escribí al menos una herramienta');
     const ya = items.filter(it => it.cat ? yaCat(it.cat) : HERR.some(h => h.estado !== 'baja' && String(h.nombre).toLowerCase().startsWith(it.nombre.toLowerCase())));
@@ -2625,7 +2633,8 @@ function abrirHerrLote() {
       const h = it.cat
         ? { _id: idHerr(), cat: it.cat, nombre: it.serie ? it.nombre + ' (' + (it.ini + k) + ')' : it.nombre, codigo: it.serie ? it.cat + '-' + (it.ini + k) : it.cat }
         : { _id: idHerr(), nombre: it.n > 1 ? it.nombre + ' ' + k : it.nombre, codigo: it.codigo ? (it.n > 1 ? it.codigo + '-' + k : it.codigo) : null };
-      if (!(await movHerr(h, { estado: it.rep ? 'reparacion' : 'disponible', tiene: null, desde: null }, { tipo: 'alta', nota: 'Inventario inicial' + (it.rep ? ' · en reparación' : '') }))) { g.disabled = false; g.textContent = 'Guardar herramientas'; return toast('Se guardaron ' + tot + '. Revisá la conexión y volvé a intentar con las que faltan'); }
+      h.cond = it.cond;
+      if (!(await movHerr(h, { estado: 'disponible', cond: it.cond, tiene: null, desde: null }, { tipo: 'alta', cond: it.cond, nota: 'Inventario inicial' + (it.cond !== 'bueno' ? ' · ' + HERR_COND_F[it.cond] : '') }))) { g.disabled = false; g.textContent = 'Guardar herramientas'; return toast('Se guardaron ' + tot + '. Revisá la conexión y volvé a intentar con las que faltan'); }
       tot++;
     }
     dlg.close(); toast(tot + (tot === 1 ? ' herramienta cargada' : ' herramientas cargadas'));
@@ -2641,18 +2650,20 @@ function abrirHerr(id) {
     <label class="campo">Nombre<input id="hr-nombre" placeholder="Ej.: Amoladora grande, Vibrador de inmersión"></label>
     <label class="campo">Código o número (opcional)<input id="hr-codigo" placeholder="Ej.: AM-02"></label>
     <label class="campo">Cantidad de unidades iguales<input id="hr-cant" type="number" min="1" max="30" value="1"></label>
+    ${radiosCond('hr-cond0', 'bueno')}
     <p class="ayuda" style="margin:0">Si cargás más de una, se numeran solas (Amoladora 1, Amoladora 2…).</p>
     <div class="acciones"><button class="btn" type="button" id="hr-cerrar">Cancelar</button><button class="btn prim" type="button" id="hr-alta">Guardar</button></div>`;
   else {
-    c = `<h3>${esc(h.nombre)}</h3><dl><dt>Estado</dt><dd>${esc(HERR_EST[h.estado] || h.estado)}${herrAtrasada(h) ? ' · <span class="obs">sin devolver</span>' : ''}</dd>${h.codigo ? `<dt>Código</dt><dd>${esc(h.codigo)}</dd>` : ''}${h.estado === 'prestada' ? `<dt>La tiene</dt><dd>${esc(h.tiene || '')}</dd><dt>Desde</dt><dd>${esc(fechaHora(h.desde))}</dd>` : ''}</dl>`;
-    if (pe && h.estado === 'disponible') c += `<label class="campo">¿Quién la lleva?<input id="hr-a" list="hr-personas" placeholder="Nombre y apellido"></label><datalist id="hr-personas">${personas.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    c = `<h3>${esc(h.nombre)}</h3><dl><dt>Condición</dt><dd>${esc(HERR_COND[condHerr(h)])}</dd><dt>Estado</dt><dd>${esc(HERR_EST[h.estado] || h.estado)}${herrAtrasada(h) ? ' · <span class="obs">sin devolver</span>' : ''}</dd>${h.codigo ? `<dt>Código</dt><dd>${esc(h.codigo)}</dd>` : ''}${h.estado === 'prestada' ? `<dt>La tiene</dt><dd>${esc(h.tiene || '')}</dd><dt>Desde</dt><dd>${esc(fechaHora(h.desde))}</dd>` : ''}</dl>`;
+    if (pe && h.estado === 'disponible' && condHerr(h) !== 'bueno') c += '<p class="aviso" style="margin:8px 0 0">No se puede prestar: la herramienta está ' + HERR_COND_F[condHerr(h)] + '. Cuando esté lista, cambiale el estado a Bueno.</p>';
+    if (pe && h.estado === 'disponible' && condHerr(h) === 'bueno') c += `<label class="campo">¿Quién la lleva?<input id="hr-a" list="hr-personas" placeholder="Nombre y apellido"></label><datalist id="hr-personas">${personas.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
       <label class="campo">Nota (opcional)<input id="hr-nota" placeholder="Ej.: para la pista 2"></label>
-      <div class="acciones"><button class="btn" type="button" id="hr-rep">Mandar a reparación</button><button class="btn prim" type="button" id="hr-prestar">Prestar</button></div>`;
-    if (pe && h.estado === 'prestada') c += `<fieldset class="chk"><legend>¿Cómo vuelve?</legend><div class="fila2"><label class="op"><input type="radio" name="hr-est" value="bien" checked> Bien</label><label class="op"><input type="radio" name="hr-est" value="dano"> Con daño</label></div></fieldset>
+      <div class="acciones"><button class="btn prim" type="button" id="hr-prestar">Prestar</button></div>`;
+    if (pe && h.estado === 'prestada') c += `${radiosCond('hr-est', 'bueno', '¿Cómo vuelve?')}
       <label class="campo">Observaciones <span id="hr-nota-req">(opcional)</span><input id="hr-nota" placeholder="Qué le pasó"></label>
       ${assets ? '<div><label class="btn btn-foto">📷 Foto (si vuelve con daño)<input type="file" id="hr-foto" accept="image/*" hidden></label> <span class="ayuda" id="hr-foto-txt"></span></div>' : ''}
       <div class="acciones"><button class="btn prim" type="button" id="hr-devolver">Registrar devolución</button></div>`;
-    if (pe && h.estado === 'reparacion') c += '<div class="acciones"><button class="btn prim" type="button" id="hr-reparada">Volvió de reparación</button></div>';
+    if (pe && h.estado !== 'prestada') c += `${radiosCond('hr-cond', condHerr(h), 'Cambiar el estado')}<label class="campo">Observaciones <span id="hr-cnota-req">(si no está bueno, contá qué le pasó)</span><input id="hr-cnota" placeholder="Qué le pasó o qué se arregló"></label><div class="acciones"><button class="btn prim" type="button" id="hr-cond-ok">Guardar estado</button></div>`;
     if (soyDueno && h.estado !== 'prestada') c += '<div class="acciones"><button class="btn peligro" type="button" id="hr-baja">Dar de baja</button></div>';
     c += '<div class="acciones"><button class="btn" type="button" id="hr-cerrar">Cerrar</button></div>';
   }
@@ -2663,7 +2674,8 @@ function abrirHerr(id) {
   on('#hr-alta', async () => {
     const nombre = $('#hr-nombre').value.trim(), codigo = $('#hr-codigo').value.trim(), n = Math.max(1, Math.min(30, parseInt($('#hr-cant').value, 10) || 1));
     if (!nombre) return toast('Falta el nombre');
-    for (let k = 1; k <= n; k++) await movHerr({ _id: idHerr(), nombre: n > 1 ? nombre + ' ' + k : nombre, codigo: codigo ? (n > 1 ? codigo + '-' + k : codigo) : null }, { estado: 'disponible', tiene: null, desde: null }, { tipo: 'alta' });
+    const cond0 = (document.querySelector('[name="hr-cond0"]:checked') || {}).value || 'bueno';
+    for (let k = 1; k <= n; k++) await movHerr({ _id: idHerr(), cond: cond0, nombre: n > 1 ? nombre + ' ' + k : nombre, codigo: codigo ? (n > 1 ? codigo + '-' + k : codigo) : null }, { estado: 'disponible', cond: cond0, tiene: null, desde: null }, { tipo: 'alta', cond: cond0 });
     toast(n > 1 ? n + ' herramientas cargadas' : 'Herramienta cargada'); cerrar();
   });
   on('#hr-prestar', async () => {
@@ -2671,18 +2683,22 @@ function abrirHerr(id) {
     const nota = $('#hr-nota').value.trim() || null;
     if (await movHerr(h, { estado: 'prestada', tiene: a, desde: ahoraISO() }, { tipo: 'prestamo', a, nota })) { toast('Prestada a ' + a); cerrar(); }
   });
-  on('#hr-rep', async () => { if (await movHerr(h, { estado: 'reparacion', tiene: null, desde: null }, { tipo: 'devolucion', estado: 'dano', nota: 'Enviada a reparación' })) { toast('En reparación'); cerrar(); } });
-  on('#hr-reparada', async () => { if (await movHerr(h, { estado: 'disponible', tiene: null, desde: null }, { tipo: 'reparada' })) { toast('Disponible otra vez'); cerrar(); } });
+  on('#hr-cond-ok', async () => {
+    const cond = (document.querySelector('[name="hr-cond"]:checked') || {}).value || condHerr(h), nota = $('#hr-cnota').value.trim() || null;
+    if (cond === condHerr(h)) return toast('El estado no cambió');
+    if (cond !== 'bueno' && !nota) { $('#hr-cnota').focus(); return toast('Escribí qué le pasó'); }
+    if (await movHerr(h, { estado: 'disponible', cond, tiene: null, desde: null }, { tipo: 'estado', cond, nota })) { toast('Estado: ' + HERR_COND[cond]); cerrar(); }
+  });
   on('#hr-baja', async () => { if (await movHerr(h, { estado: 'baja', tiene: null, desde: null }, { tipo: 'baja' })) { toast('Dada de baja'); cerrar(); } });
   let foto = null, subiendo = null;
   const fi = $('#hr-foto');
   if (fi) fi.onchange = () => { const f = fi.files[0]; if (!f) return; $('#hr-foto-txt').textContent = 'Subiendo…'; subiendo = subirFoto(f).then(fid => { foto = fid; $('#hr-foto-txt').textContent = 'Foto guardada ✅'; }).catch(err => { $('#hr-foto-txt').textContent = ''; toast(errorFoto(err)); }); };
-  document.querySelectorAll('[name="hr-est"]').forEach(r => r.onchange = () => { $('#hr-nota-req').textContent = r.value === 'dano' ? '(obligatorias)' : '(opcional)'; });
+  document.querySelectorAll('[name="hr-est"]').forEach(r => r.onchange = () => { $('#hr-nota-req').textContent = r.value !== 'bueno' ? '(obligatorias)' : '(opcional)'; });
   on('#hr-devolver', async () => {
-    const est = (document.querySelector('[name="hr-est"]:checked') || {}).value || 'bien', nota = $('#hr-nota').value.trim() || null;
-    if (est === 'dano' && !nota) return toast('Escribí qué daño tiene');
+    const cond = (document.querySelector('[name="hr-est"]:checked') || {}).value || 'bueno', nota = $('#hr-nota').value.trim() || null;
+    if (cond !== 'bueno' && !nota) { $('#hr-nota').focus(); return toast('Escribí qué daño tiene'); }
     if (subiendo) await subiendo;
-    if (await movHerr(h, { estado: est === 'dano' ? 'reparacion' : 'disponible', tiene: null, desde: null }, { tipo: 'devolucion', a: h.tiene || null, estado: est, nota, foto })) { toast(est === 'dano' ? 'Devuelta con daño: queda en reparación' : 'Devuelta'); cerrar(); }
+    if (await movHerr(h, { estado: 'disponible', cond, tiene: null, desde: null }, { tipo: 'devolucion', a: h.tiene || null, estado: cond === 'bueno' ? 'bien' : 'dano', cond, nota, foto })) { toast(cond === 'bueno' ? 'Devuelta' : 'Devuelta: queda ' + HERR_COND_F[cond]); cerrar(); }
   });
 }
 document.addEventListener('click', e => {
